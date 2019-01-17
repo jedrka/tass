@@ -1,0 +1,51 @@
+
+skrypt generujący listę typu
+imię_nazwisko_polaka, numer patentów
+
+#standardSQL
+WITH 
+patent_inventor AS (SELECT * FROM (SELECT assignee_harmonized, inventor_harmonized, family_id,  REGEXP_EXTRACT(publication_number,r"^.*-") as publication_number   FROM `patents-public-data.patents.publications`) AS p CROSS JOIN UNNEST(p.inventor_harmonized) AS unnested_name) , 
+imiona_polakow AS (SELECT name FROM patent_inventor WHERE country_code LIKE "%PL%" GROUP BY name),
+patenty_polakow AS (SELECT assignee_harmonized, inventor_harmonized, publication_number,family_id, i_p.name FROM patent_inventor as p_i JOIN imiona_polakow as i_p USING(name) ),
+lista_ludzi_ilosc AS (SELECT COUNT(DISTINCT IFNULL(family_id,publication_number)) AS ilosc_patentow, name FROM patenty_polakow GROUP BY name)
+SELECT 
+name, ilosc_patentow
+FROM lista_ludzi_ilosc
+
+
+
+skrypt wyciągający listę podmiotów zgłaszających patenty, które mają zaznaczone PL.
+
+#standardSQL
+SELECT
+  name, COUNT(publication_number) as ile_pat
+FROM
+  (SELECT assignee_harmonized, publication_number FROM `patents-public-data.patents.publications`) AS p
+  CROSS JOIN UNNEST(p.assignee_harmonized)
+WHERE
+  country_code = "PL"
+GROUP BY name
+ORDER BY ile_pat DESC
+
+
+
+
+skrypt wyciągający patenty należące do podmiotów podanych na liście
+(zdarzało się że dany podmiot czasami był oflagowany PL a czasami nie. ta metoda pozwala na ominięcie tego problemu i patenty są szukane korzystając z obrobionej listy nazw)
+
+#standardSQL
+WITH assignee_patent AS (SELECT * FROM (SELECT assignee, assignee_harmonized, inventor, inventor_harmonized, publication_number FROM `patents-public-data.patents.publications`) AS p CROSS JOIN UNNEST(p.assignee_harmonized) )
+SELECT 
+ list.assignee_raw, list.assignee_alias , publication_number, assignee , assignee_harmonized, inventor, inventor_harmonized
+FROM
+  (
+  #wyciagnij pojedyncze assignee do każdego patentu
+  assignee_patent AS patents
+  INNER JOIN 
+  `qqus.assigne_pl_short_w_aliases`  AS list
+  ON NORMALIZE_AND_CASEFOLD(patents.name) = NORMALIZE_AND_CASEFOLD(list.assignee_raw)
+  )
+  
+wynik został wyeksportowany do json
+
+
